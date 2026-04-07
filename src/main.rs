@@ -8,9 +8,20 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     println!("Fetching liked songs from Navidrome...");
-    let songs = api::fetch_starred_songs(&args).await?;
 
-    sync::sync_songs(&args, songs).await?;
+    let api_config = api::ApiConfig {
+        url: args.url,
+        user: args.user,
+        password: args.password,
+    };
+    let songs = api::fetch_starred_songs(&api_config).await?;
+
+    let sync_config = sync::SyncConfig {
+        navidrome_dir: args.navidrome_dir,
+        local_dir: args.local_dir,
+        dest_dir: args.dest_dir,
+    };
+    sync::sync_songs(&sync_config, songs).await?;
 
     Ok(())
 }

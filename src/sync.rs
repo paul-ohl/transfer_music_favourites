@@ -1,10 +1,15 @@
-use crate::cli::Args;
 use crate::models::Song;
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub async fn sync_songs(args: &Args, songs: Vec<Song>) -> Result<()> {
+pub struct SyncConfig {
+    pub navidrome_dir: String,
+    pub local_dir: PathBuf,
+    pub dest_dir: PathBuf,
+}
+
+pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     if songs.is_empty() {
         println!("No liked songs found.");
         return Ok(());
@@ -19,7 +24,7 @@ pub async fn sync_songs(args: &Args, songs: Vec<Song>) -> Result<()> {
             .progress_chars("##-"),
     );
 
-    let navidrome_dir_path = Path::new(&args.navidrome_dir);
+    let navidrome_dir_path = Path::new(&config.navidrome_dir);
 
     for song in songs {
         // Handle paths whether they are absolute (from Navidrome's view) or already relative
@@ -29,8 +34,8 @@ pub async fn sync_songs(args: &Args, songs: Vec<Song>) -> Result<()> {
             .unwrap_or(song_path);
         let rel_path = rel_path.strip_prefix("/").unwrap_or(rel_path);
 
-        let source_path = args.local_dir.join(rel_path);
-        let dest_path = args.dest_dir.join(rel_path);
+        let source_path = config.local_dir.join(rel_path);
+        let dest_path = config.dest_dir.join(rel_path);
 
         pb.set_message(song.title.clone());
 

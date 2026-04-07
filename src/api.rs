@@ -1,8 +1,13 @@
-use crate::cli::Args;
 use crate::models::{Song, SubsonicResponse};
 use anyhow::{Context, Result};
 use md5::{Digest, Md5};
 use rand::{RngExt, distr::Alphanumeric};
+
+pub struct ApiConfig {
+    pub url: String,
+    pub user: String,
+    pub password: String,
+}
 
 fn generate_salt() -> String {
     let rng = rand::rng();
@@ -21,17 +26,17 @@ fn generate_auth_token(password: &str, salt: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-pub async fn fetch_starred_songs(args: &Args) -> Result<Vec<Song>> {
+pub async fn fetch_starred_songs(config: &ApiConfig) -> Result<Vec<Song>> {
     let salt = generate_salt();
-    let token = generate_auth_token(&args.password, &salt);
+    let token = generate_auth_token(&config.password, &salt);
 
     let client = reqwest::Client::new();
-    let api_url = format!("{}/rest/getStarred", args.url.trim_end_matches('/'));
+    let api_url = format!("{}/rest/getStarred", config.url.trim_end_matches('/'));
 
     let res = client
         .get(&api_url)
         .query(&[
-            ("u", args.user.as_str()),
+            ("u", config.user.as_str()),
             ("t", token.as_str()),
             ("s", salt.as_str()),
             ("v", "1.16.1"),
