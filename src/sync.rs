@@ -36,8 +36,8 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
 
     println!("Found {} liked songs. Starting copy...", songs.len());
 
-    let pb = ProgressBar::new(songs.len() as u64);
-    pb.set_style(
+    let progress_bar = ProgressBar::new(songs.len() as u64);
+    progress_bar.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({eta}) {msg}")?
             .progress_chars("##-"),
@@ -65,23 +65,23 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
             dest_path.set_extension(ext);
         }
 
-        pb.set_message(song.title.clone());
+        progress_bar.set_message(song.title.clone());
 
         if dest_path.exists() {
-            pb.inc(1);
+            progress_bar.inc(1);
             continue;
         }
 
         if !source_path.exists() {
-            pb.println(format!("Warning: Source file not found: {:?}", source_path));
-            pb.inc(1);
+            progress_bar.println(format!("Warning: Source file not found: {:?}", source_path));
+            progress_bar.inc(1);
             continue;
         }
 
         if let Some(parent) = dest_path.parent() {
             if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                pb.println(format!("Error creating directory {:?}: {}", parent, e));
-                pb.inc(1);
+                progress_bar.println(format!("Error creating directory {:?}: {}", parent, e));
+                progress_bar.inc(1);
                 continue;
             }
 
@@ -102,7 +102,7 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
             }
 
             if conflict_found && config.on_conflict == ConflictStrategy::Ignore {
-                pb.inc(1);
+                progress_bar.inc(1);
                 continue;
             }
         }
@@ -119,7 +119,7 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
 
         if !needs_conversion {
             if let Err(e) = tokio::fs::copy(&source_path, &dest_path).await {
-                pb.println(format!(
+                progress_bar.println(format!(
                     "Error copying {:?} to {:?}: {}",
                     source_path, dest_path, e
                 ));
@@ -160,12 +160,13 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
             match output {
                 Ok(out) if out.status.success() => {
                     if let Err(e) = tokio::fs::rename(&tmp_dest, &dest_path).await {
-                        pb.println(format!("Error renaming temp file {:?}: {}", tmp_dest, e));
+                        progress_bar
+                            .println(format!("Error renaming temp file {:?}: {}", tmp_dest, e));
                     }
                 }
                 Ok(out) => {
                     let _ = tokio::fs::remove_file(&tmp_dest).await;
-                    pb.println(format!(
+                    progress_bar.println(format!(
                         "FFmpeg error for {:?}: {}",
                         source_path,
                         String::from_utf8_lossy(&out.stderr)
@@ -173,7 +174,7 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
                 }
                 Err(e) => {
                     let _ = tokio::fs::remove_file(&tmp_dest).await;
-                    pb.println(format!(
+                    progress_bar.println(format!(
                         "Failed to execute FFmpeg for {:?}: {}",
                         source_path, e
                     ));
@@ -181,10 +182,10 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
             }
         }
 
-        pb.inc(1);
+        progress_bar.inc(1);
     }
 
-    pb.finish_with_message("Done!");
+    progress_bar.finish_with_message("Done!");
 
     Ok(())
 }
