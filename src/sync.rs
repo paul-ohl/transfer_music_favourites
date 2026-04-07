@@ -3,6 +3,7 @@ use crate::models::Song;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
@@ -15,6 +16,7 @@ pub struct SyncConfig {
     pub format: Option<Format>,
     pub on_conflict: ConflictStrategy,
     pub priority: ConversionPriority,
+    pub delete_unliked: bool,
 }
 
 async fn check_ffmpeg_installed() -> Result<()> {
@@ -35,6 +37,10 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
 
     if config.format.is_some() {
         check_ffmpeg_installed().await?;
+    }
+
+    if config.delete_unliked {
+        delete_unliked_songs(config, &songs).await?;
     }
 
     println!("Found {} liked songs. Starting copy...", songs.len());
@@ -82,6 +88,91 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
         .await;
 
     progress_bar.finish_with_message("Done!");
+
+    Ok(())
+}
+
+async fn delete_unliked_songs(config: &SyncConfig, songs: &[Song]) -> Result<()> {
+    if !config.dest_dir.exists() {
+        return Ok(());
+    }
+
+    println!("Checking for unliked songs to delete...");
+
+    let navidrome_dir_path = PathBuf::from(&config.navidrome_dir);
+    let mut expected_paths = HashSet::new();
+
+    // Build expected paths without extension
+    for song in songs {
+        let song_path = Path::new(&song.path);
+        let rel_path = song_path
+            .strip_prefix(&navidrome_dir_path)
+            .unwrap_or(song_path);
+        let rel_path = rel_path.strip_prefix("/").unwrap_or(rel_path);
+        expected_paths.insert(rel_path.with_extension(""));
+    }
+
+    let mut dirs = vec![config.dest_dir.clone()];
+    let mut deleted_count = 0;
+
+    let audio_extensions = [
+        "mp3", "flac", "opus", "wav", "m4a", "ogg", "aac", "alac", "wma",
+    ];
+
+    while let Some(dir) = dirs.pop() {
+        let mut entries = match tokio::fs::read_dir(&dir).await {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.is_file() {
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
+                // Only consider deleting files with known audio extensions
+                // or temp files created by this tool
+                let is_audio = audio_extensions.contains(&ext.as_str());
+                let is_temp = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with(".tmp."));
+
+                if (is_audio || is_temp)
+                    && let Ok(rel_path) = path.strip_prefix(&config.dest_dir)
+                {
+                    let rel_no_ext = if is_temp {
+                        // Strip `.tmp.` prefix and actual extension
+                        let file_name = rel_path.file_name().unwrap().to_string_lossy();
+                        let clean_name = file_name.strip_prefix(".tmp.").unwrap_or(&file_name);
+                        rel_path.with_file_name(clean_name).with_extension("")
+                    } else {
+                        rel_path.with_extension("")
+                    };
+
+                    if !expected_paths.contains(&rel_no_ext) {
+                        if let Err(e) = tokio::fs::remove_file(&path).await {
+                            eprintln!("Failed to delete unliked song {:?}: {}", path, e);
+                        } else {
+                            deleted_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if deleted_count > 0 {
+        println!("Deleted {} unliked song(s).", deleted_count);
+    } else {
+        println!("No unliked songs found to delete.");
+    }
 
     Ok(())
 }
@@ -224,6 +315,7 @@ mod tests {
             format: Some(Format::Mp3),
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            delete_unliked: false,
         };
 
         // Needs conversion
@@ -245,6 +337,7 @@ mod tests {
             format: Some(Format::Opus),
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            delete_unliked: false,
         };
 
         // Needs conversion
@@ -266,6 +359,7 @@ mod tests {
             format: None,
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            delete_unliked: false,
         };
 
         // Never needs conversion if no format is specified

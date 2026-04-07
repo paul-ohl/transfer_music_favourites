@@ -62,4 +62,8 @@ pub struct Args {
     /// Priority for conversion (quality, balance, compression)
     #[arg(long, default_value = "balance")]
     pub priority: ConversionPriority,
+
+    /// Keep songs in the destination directory that are no longer liked in Navidrome
+    #[arg(long)]
+    pub keep_unliked: bool,
 }

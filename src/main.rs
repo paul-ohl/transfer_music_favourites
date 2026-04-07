@@ -23,8 +23,17 @@ async fn main() -> Result<()> {
         format: args.format,
         on_conflict: args.on_conflict,
         priority: args.priority,
+        delete_unliked: !args.keep_unliked,
     };
-    sync::sync_songs(&sync_config, songs).await?;
+    sync::sync_songs(
+        &sync_config,
+        songs
+            .into_iter()
+            .filter(|s| s.path.ends_with("mp3"))
+            .take(1)
+            .collect(),
+    )
+    .await?;
 
     Ok(())
 }
