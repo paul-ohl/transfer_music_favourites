@@ -26,3 +26,4 @@ The application uses a modular structure to isolate concerns:
 2. **Async File I/O:** When performing file operations inside a tokio runtime, use `tokio::fs` (e.g., `tokio::fs::copy`, `tokio::fs::create_dir_all`) instead of `std::fs` to prevent blocking the async executor.
 3. **HTTP Errors:** Always use `.error_for_status()` when making requests with `reqwest` before parsing the response body. This prevents the application from trying to parse HTML error pages (like 404s) as JSON.
 4. **Path Prefixes:** When stripping directory prefixes, use `std::path::Path::strip_prefix` rather than string `starts_with` checks to avoid false positives on similar directory names.
+5. **Async Process Execution:** When executing external commands (like `ffmpeg`), use `tokio::process::Command` instead of `std::process::Command` to prevent blocking the async executor while waiting for the child process to complete.
