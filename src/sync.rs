@@ -52,7 +52,9 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     // Determine optimal concurrency based on available CPU cores.
     // This allows tokio and ffmpeg to utilize the system's full parallel capabilities
     // without overloading the OS with too many simultaneous file/process handles.
-    let workers = thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let workers = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
     // Create a stream from the songs vector and process them concurrently
     // Note: We use futures::stream rather than rayon because we're running async tasks
@@ -205,5 +207,71 @@ async fn convert_song(config: &SyncConfig, source_path: &Path, dest_path: &Path)
     } else {
         let _ = tokio::fs::remove_file(&tmp_dest).await;
         anyhow::bail!("FFmpeg error: {}", String::from_utf8_lossy(&output.stderr));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_needs_conversion_mp3() {
+        let config = SyncConfig {
+            navidrome_dir: "/music".to_string(),
+            local_dir: PathBuf::from("/local"),
+            dest_dir: PathBuf::from("/dest"),
+            format: Some(Format::Mp3),
+            on_conflict: ConflictStrategy::Ignore,
+            priority: ConversionPriority::Balance,
+        };
+
+        // Needs conversion
+        assert!(needs_conversion(&config, Path::new("song.flac")));
+        assert!(needs_conversion(&config, Path::new("song.wav")));
+        assert!(needs_conversion(&config, Path::new("song.opus")));
+
+        // Doesn't need conversion
+        assert!(!needs_conversion(&config, Path::new("song.mp3")));
+        assert!(!needs_conversion(&config, Path::new("song.MP3")));
+    }
+
+    #[test]
+    fn test_needs_conversion_opus() {
+        let config = SyncConfig {
+            navidrome_dir: "/music".to_string(),
+            local_dir: PathBuf::from("/local"),
+            dest_dir: PathBuf::from("/dest"),
+            format: Some(Format::Opus),
+            on_conflict: ConflictStrategy::Ignore,
+            priority: ConversionPriority::Balance,
+        };
+
+        // Needs conversion
+        assert!(needs_conversion(&config, Path::new("song.flac")));
+        assert!(needs_conversion(&config, Path::new("song.wav")));
+        assert!(needs_conversion(&config, Path::new("song.mp3")));
+
+        // Doesn't need conversion
+        assert!(!needs_conversion(&config, Path::new("song.opus")));
+        assert!(!needs_conversion(&config, Path::new("song.OPUS")));
+    }
+
+    #[test]
+    fn test_needs_conversion_none() {
+        let config = SyncConfig {
+            navidrome_dir: "/music".to_string(),
+            local_dir: PathBuf::from("/local"),
+            dest_dir: PathBuf::from("/dest"),
+            format: None,
+            on_conflict: ConflictStrategy::Ignore,
+            priority: ConversionPriority::Balance,
+        };
+
+        // Never needs conversion if no format is specified
+        assert!(!needs_conversion(&config, Path::new("song.flac")));
+        assert!(!needs_conversion(&config, Path::new("song.wav")));
+        assert!(!needs_conversion(&config, Path::new("song.mp3")));
+        assert!(!needs_conversion(&config, Path::new("song.opus")));
     }
 }
