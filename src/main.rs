@@ -20,6 +20,9 @@ async fn main() -> Result<()> {
         navidrome_dir: args.navidrome_dir,
         local_dir: args.local_dir,
         dest_dir: args.dest_dir,
+        format: args.format,
+        on_conflict: args.on_conflict,
+        priority: args.priority,
     };
     sync::sync_songs(&sync_config, songs).await?;
 

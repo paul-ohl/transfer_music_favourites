@@ -1,5 +1,24 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum Format {
+    Mp3,
+    Opus,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum ConflictStrategy {
+    Overwrite,
+    Ignore,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum ConversionPriority {
+    Quality,
+    Balance,
+    Compression,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -31,4 +50,16 @@ pub struct Args {
     /// The destination directory to copy liked songs to
     #[arg(long)]
     pub dest_dir: PathBuf,
+
+    /// Format to convert songs to (mp3, opus). Copied as-is if omitted.
+    #[arg(long)]
+    pub format: Option<Format>,
+
+    /// Strategy to use if a file with the same name but different extension exists.
+    #[arg(long, default_value = "overwrite")]
+    pub on_conflict: ConflictStrategy,
+
+    /// Priority for conversion (quality, balance, compression)
+    #[arg(long, default_value = "balance")]
+    pub priority: ConversionPriority,
 }
