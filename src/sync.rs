@@ -125,13 +125,12 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
                 ));
             }
         } else {
-            let tmp_dest = dest_path.with_extension(format!(
-                "{}.tmp",
-                dest_path.extension().unwrap_or_default().to_string_lossy()
-            ));
+            let file_name = dest_path.file_name().unwrap_or_default().to_string_lossy();
+            let tmp_dest = dest_path.with_file_name(format!(".tmp.{}", file_name));
 
             let mut cmd = Command::new("ffmpeg");
             cmd.arg("-i").arg(&source_path);
+            cmd.arg("-vn");
 
             match config.format.as_ref().unwrap() {
                 Format::Mp3 => {
