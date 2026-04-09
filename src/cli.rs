@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub enum Format {
     Mp3,
     Opus,
+    Ogg,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
@@ -51,7 +52,7 @@ pub struct Args {
     #[arg(long)]
     pub dest_dir: PathBuf,
 
-    /// Format to convert songs to (mp3, opus). Copied as-is if omitted.
+    /// Format to convert songs to (mp3, opus, ogg). Copied as-is if omitted.
     #[arg(long)]
     pub format: Option<Format>,
 

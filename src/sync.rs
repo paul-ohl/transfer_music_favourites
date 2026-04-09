@@ -101,6 +101,7 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
         let ext = match format {
             Format::Mp3 => "mp3",
             Format::Opus => "opus",
+            Format::Ogg => "ogg",
         };
         dest_path.set_extension(ext);
     }
@@ -164,6 +165,9 @@ fn needs_conversion(config: &SyncConfig, source_path: &Path) -> bool {
         Some(Format::Opus) => !source_path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("opus")),
+        Some(Format::Ogg) => !source_path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("ogg")),
         None => false,
     }
 }
@@ -194,6 +198,15 @@ async fn convert_song(config: &SyncConfig, source_path: &Path, dest_path: &Path)
                 ConversionPriority::Compression => "64k",
             };
             cmd.arg("-b:a").arg(b);
+        }
+        Format::Ogg => {
+            cmd.arg("-c:a").arg("libvorbis");
+            let q = match config.priority {
+                ConversionPriority::Quality => "8",
+                ConversionPriority::Balance => "5",
+                ConversionPriority::Compression => "2",
+            };
+            cmd.arg("-q:a").arg(q);
         }
     }
 
@@ -230,6 +243,7 @@ mod tests {
         assert!(needs_conversion(&config, Path::new("song.flac")));
         assert!(needs_conversion(&config, Path::new("song.wav")));
         assert!(needs_conversion(&config, Path::new("song.opus")));
+        assert!(needs_conversion(&config, Path::new("song.ogg")));
 
         // Doesn't need conversion
         assert!(!needs_conversion(&config, Path::new("song.mp3")));
@@ -251,6 +265,7 @@ mod tests {
         assert!(needs_conversion(&config, Path::new("song.flac")));
         assert!(needs_conversion(&config, Path::new("song.wav")));
         assert!(needs_conversion(&config, Path::new("song.mp3")));
+        assert!(needs_conversion(&config, Path::new("song.ogg")));
 
         // Doesn't need conversion
         assert!(!needs_conversion(&config, Path::new("song.opus")));
@@ -273,5 +288,28 @@ mod tests {
         assert!(!needs_conversion(&config, Path::new("song.wav")));
         assert!(!needs_conversion(&config, Path::new("song.mp3")));
         assert!(!needs_conversion(&config, Path::new("song.opus")));
+        assert!(!needs_conversion(&config, Path::new("song.ogg")));
+    }
+
+    #[test]
+    fn test_needs_conversion_ogg() {
+        let config = SyncConfig {
+            navidrome_dir: "/music".to_string(),
+            local_dir: PathBuf::from("/local"),
+            dest_dir: PathBuf::from("/dest"),
+            format: Some(Format::Ogg),
+            on_conflict: ConflictStrategy::Ignore,
+            priority: ConversionPriority::Balance,
+        };
+
+        // Needs conversion
+        assert!(needs_conversion(&config, Path::new("song.flac")));
+        assert!(needs_conversion(&config, Path::new("song.wav")));
+        assert!(needs_conversion(&config, Path::new("song.mp3")));
+        assert!(needs_conversion(&config, Path::new("song.opus")));
+
+        // Doesn't need conversion
+        assert!(!needs_conversion(&config, Path::new("song.ogg")));
+        assert!(!needs_conversion(&config, Path::new("song.OGG")));
     }
 }
