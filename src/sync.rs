@@ -1,4 +1,4 @@
-use crate::cli::{ConflictStrategy, ConversionPriority, Format};
+use crate::config::{ConflictStrategy, ConversionPriority, Format};
 use crate::models::Song;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
