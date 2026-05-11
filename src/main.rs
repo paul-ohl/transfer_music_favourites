@@ -30,6 +30,12 @@ async fn main() -> Result<()> {
     let format = config.format;
     let on_conflict = config.on_conflict.unwrap_or(ConflictStrategy::Overwrite);
     let priority = config.priority.unwrap_or(ConversionPriority::Balance);
+    let whitelist = config.whitelist;
+    let blacklist = config.blacklist;
+
+    if whitelist.is_some() && blacklist.is_some() {
+        anyhow::bail!("Cannot use both whitelist and blacklist at the same time.");
+    }
 
     println!("Fetching liked songs from Navidrome...");
 
@@ -47,6 +53,8 @@ async fn main() -> Result<()> {
         format,
         on_conflict,
         priority,
+        whitelist,
+        blacklist,
     };
     sync::sync_songs(&sync_config, songs).await?;
 

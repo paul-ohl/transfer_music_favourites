@@ -26,3 +26,10 @@ on_conflict = "overwrite"
 
 # Priority for conversion (quality, balance, compression)
 priority = "balance"
+
+# Whitelist of formats to convert. If not empty, only these formats will be converted.
+# whitelist = ["flac", "wav"]
+
+# Blacklist of formats to convert. If not empty, these formats will be skipped.
+# Cannot be used at the same time as whitelist.
+# blacklist = ["mp3"]

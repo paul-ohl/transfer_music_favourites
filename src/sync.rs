@@ -15,6 +15,8 @@ pub struct SyncConfig {
     pub format: Option<Format>,
     pub on_conflict: ConflictStrategy,
     pub priority: ConversionPriority,
+    pub whitelist: Option<Vec<String>>,
+    pub blacklist: Option<Vec<String>>,
 }
 
 async fn check_ffmpeg_installed() -> Result<()> {
@@ -29,7 +31,7 @@ async fn check_ffmpeg_installed() -> Result<()> {
 
 pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     if songs.is_empty() {
-        println!("No liked songs found.");
+        println!("No liked songs found matching the criteria.");
         return Ok(());
     }
 
@@ -49,16 +51,10 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     let progress_bar = Arc::new(progress_bar);
     let navidrome_dir_path = PathBuf::from(&config.navidrome_dir);
 
-    // Determine optimal concurrency based on available CPU cores.
-    // This allows tokio and ffmpeg to utilize the system's full parallel capabilities
-    // without overloading the OS with too many simultaneous file/process handles.
     let workers = thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
 
-    // Create a stream from the songs vector and process them concurrently
-    // Note: We use futures::stream rather than rayon because we're running async tasks
-    // like tokio::fs and tokio::process.
     stream::iter(songs)
         .for_each_concurrent(workers, |song| {
             let config = &config;
@@ -69,7 +65,6 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
                 progress_bar.set_message(song.title.clone());
 
                 if let Err(e) = process_song(config, &song, &navidrome_dir_path).await {
-                    // Only print errors that aren't just "skip this file" messages
                     progress_bar.println(format!(
                         "Warning: Could not process '{}': {}",
                         song.title, e
@@ -87,7 +82,6 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
 }
 
 async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Path) -> Result<()> {
-    // 1. Path resolution
     let song_path = Path::new(&song.path);
     let rel_path = song_path
         .strip_prefix(navidrome_dir_path)
@@ -97,7 +91,9 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
     let source_path = config.local_dir.join(rel_path);
     let mut dest_path = config.dest_dir.join(rel_path);
 
-    if let Some(format) = &config.format {
+    let needs_conversion = needs_conversion(config, &source_path);
+
+    if needs_conversion && let Some(format) = &config.format {
         let ext = match format {
             Format::Mp3 => "mp3",
             Format::Opus => "opus",
@@ -116,18 +112,15 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
 
     if let Some(parent) = dest_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
-
-        // 2. Conflict resolution
         if handle_conflicts(config, &dest_path).await? {
             return Ok(());
         }
     }
 
-    // 3. Copy or convert
-    if !needs_conversion(config, &source_path) {
-        tokio::fs::copy(&source_path, &dest_path).await?;
-    } else {
+    if needs_conversion {
         convert_song(config, &source_path, &dest_path).await?;
+    } else {
+        tokio::fs::copy(&source_path, &dest_path).await?;
     }
 
     Ok(())
@@ -158,18 +151,38 @@ async fn handle_conflicts(config: &SyncConfig, dest_path: &Path) -> Result<bool>
 }
 
 fn needs_conversion(config: &SyncConfig, source_path: &Path) -> bool {
-    match &config.format {
-        Some(Format::Mp3) => !source_path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("mp3")),
-        Some(Format::Opus) => !source_path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("opus")),
-        Some(Format::Ogg) => !source_path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("ogg")),
-        None => false,
+    let target_format_str = match &config.format {
+        Some(Format::Mp3) => "mp3",
+        Some(Format::Opus) => "opus",
+        Some(Format::Ogg) => "ogg",
+        None => return false,
+    };
+
+    let source_ext = match source_path.extension().and_then(|s| s.to_str()) {
+        Some(ext) => ext,
+        None => return true, // No extension, assume it needs conversion if a target is set
+    };
+
+    if source_ext.eq_ignore_ascii_case(target_format_str) {
+        return false;
     }
+
+    if let Some(whitelist) = &config.whitelist {
+        if !whitelist
+            .iter()
+            .any(|ext| ext.eq_ignore_ascii_case(source_ext))
+        {
+            return false;
+        }
+    } else if let Some(blacklist) = &config.blacklist
+        && blacklist
+            .iter()
+            .any(|ext| ext.eq_ignore_ascii_case(source_ext))
+    {
+        return false;
+    }
+
+    true
 }
 
 async fn convert_song(config: &SyncConfig, source_path: &Path, dest_path: &Path) -> Result<()> {
@@ -237,6 +250,8 @@ mod tests {
             format: Some(Format::Mp3),
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            whitelist: None,
+            blacklist: None,
         };
 
         // Needs conversion
@@ -259,6 +274,8 @@ mod tests {
             format: Some(Format::Opus),
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            whitelist: None,
+            blacklist: None,
         };
 
         // Needs conversion
@@ -281,6 +298,8 @@ mod tests {
             format: None,
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            whitelist: None,
+            blacklist: None,
         };
 
         // Never needs conversion if no format is specified
@@ -300,6 +319,8 @@ mod tests {
             format: Some(Format::Ogg),
             on_conflict: ConflictStrategy::Ignore,
             priority: ConversionPriority::Balance,
+            whitelist: None,
+            blacklist: None,
         };
 
         // Needs conversion

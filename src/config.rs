@@ -38,6 +38,8 @@ pub struct Config {
     pub format: Option<Format>,
     pub on_conflict: Option<ConflictStrategy>,
     pub priority: Option<ConversionPriority>,
+    pub whitelist: Option<Vec<String>>,
+    pub blacklist: Option<Vec<String>>,
 }
 
 pub fn load_config(config_path: Option<PathBuf>) -> Result<Config> {
