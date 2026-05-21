@@ -17,6 +17,7 @@ pub struct SyncConfig {
     pub priority: ConversionPriority,
     pub whitelist: Option<Vec<String>>,
     pub blacklist: Option<Vec<String>>,
+    pub transfer_lyric_files: bool,
 }
 
 async fn check_ffmpeg_installed() -> Result<()> {
@@ -123,6 +124,24 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
         tokio::fs::copy(&source_path, &dest_path).await?;
     }
 
+    if config.transfer_lyric_files {
+        transfer_lyric_file(&source_path, &dest_path).await?;
+    }
+
+    Ok(())
+}
+
+async fn transfer_lyric_file(original_song_path: &Path, dest_song_path: &Path) -> Result<()> {
+    for ext in ["lrc", "txt"] {
+        let original_lyric_path = original_song_path.with_extension(ext);
+        if original_lyric_path.exists() {
+            let dest_lyric_path = dest_song_path.with_extension(ext);
+            if let Some(parent) = dest_lyric_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            tokio::fs::copy(&original_lyric_path, &dest_lyric_path).await?;
+        }
+    }
     Ok(())
 }
 
@@ -252,6 +271,7 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
+            transfer_lyric_files: false,
         };
 
         // Needs conversion
@@ -276,6 +296,7 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
+            transfer_lyric_files: false,
         };
 
         // Needs conversion
@@ -300,6 +321,7 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
+            transfer_lyric_files: false,
         };
 
         // Never needs conversion if no format is specified
@@ -321,6 +343,7 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
+            transfer_lyric_files: false,
         };
 
         // Needs conversion

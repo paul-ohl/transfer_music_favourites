@@ -40,6 +40,7 @@ pub struct Config {
     pub priority: Option<ConversionPriority>,
     pub whitelist: Option<Vec<String>>,
     pub blacklist: Option<Vec<String>>,
+    pub transfer_lyric_files: Option<bool>,
 }
 
 pub fn load_config(config_path: Option<PathBuf>) -> Result<Config> {

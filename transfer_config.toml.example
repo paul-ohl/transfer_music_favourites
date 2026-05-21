@@ -33,3 +33,6 @@ priority = "balance"
 # Blacklist of formats to convert. If not empty, these formats will be skipped.
 # Cannot be used at the same time as whitelist.
 # blacklist = ["mp3"]
+
+# Whether to transfer lyric files (.lrc, .txt) alongside the music files.
+# transfer_lyric_files = false

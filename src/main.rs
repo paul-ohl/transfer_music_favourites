@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use transfer_music_favourites::{
-    api,
+    api::{ApiConfig, fetch_starred_songs},
     cli::Args,
-    config,
-    config::{ConflictStrategy, ConversionPriority},
-    sync::{self, SyncConfig},
+    config::{ConflictStrategy, ConversionPriority, load_config},
+    sync::{SyncConfig, sync_songs},
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let config = config::load_config(args.config).context("Could not load config file")?;
+    let config = load_config(args.config).context("Could not load config file")?;
 
     let url = config.url.context("Missing required parameter: url")?;
     let user = config.user.context("Missing required parameter: user")?;
@@ -32,6 +31,7 @@ async fn main() -> Result<()> {
     let priority = config.priority.unwrap_or(ConversionPriority::Balance);
     let whitelist = config.whitelist;
     let blacklist = config.blacklist;
+    let transfer_lyric_files = config.transfer_lyric_files.unwrap_or(false);
 
     if whitelist.is_some() && blacklist.is_some() {
         anyhow::bail!("Cannot use both whitelist and blacklist at the same time.");
@@ -39,12 +39,12 @@ async fn main() -> Result<()> {
 
     println!("Fetching liked songs from Navidrome...");
 
-    let api_config = api::ApiConfig {
+    let api_config = ApiConfig {
         url,
         user,
         password,
     };
-    let songs = api::fetch_starred_songs(&api_config).await?;
+    let songs = fetch_starred_songs(&api_config).await?;
 
     let sync_config = SyncConfig {
         navidrome_dir,
@@ -55,8 +55,9 @@ async fn main() -> Result<()> {
         priority,
         whitelist,
         blacklist,
+        transfer_lyric_files,
     };
-    sync::sync_songs(&sync_config, songs).await?;
+    sync_songs(&sync_config, songs).await?;
 
     Ok(())
 }
