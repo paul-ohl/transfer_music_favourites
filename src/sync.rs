@@ -17,7 +17,6 @@ pub struct SyncConfig {
     pub priority: ConversionPriority,
     pub whitelist: Option<Vec<String>>,
     pub blacklist: Option<Vec<String>>,
-    pub transfer_lyric_files: bool,
 }
 
 async fn check_ffmpeg_installed() -> Result<()> {
@@ -124,9 +123,7 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
         tokio::fs::copy(&source_path, &dest_path).await?;
     }
 
-    if config.transfer_lyric_files {
-        transfer_lyric_file(&source_path, &dest_path).await?;
-    }
+    transfer_lyric_file(&source_path, &dest_path).await?;
 
     Ok(())
 }
@@ -271,7 +268,6 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
-            transfer_lyric_files: false,
         };
 
         // Needs conversion
@@ -296,7 +292,6 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
-            transfer_lyric_files: false,
         };
 
         // Needs conversion
@@ -321,7 +316,6 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
-            transfer_lyric_files: false,
         };
 
         // Never needs conversion if no format is specified
@@ -343,7 +337,6 @@ mod tests {
             priority: ConversionPriority::Balance,
             whitelist: None,
             blacklist: None,
-            transfer_lyric_files: false,
         };
 
         // Needs conversion

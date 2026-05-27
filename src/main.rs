@@ -31,7 +31,6 @@ async fn main() -> Result<()> {
     let priority = config.priority.unwrap_or(ConversionPriority::Balance);
     let whitelist = config.whitelist;
     let blacklist = config.blacklist;
-    let transfer_lyric_files = config.transfer_lyric_files.unwrap_or(false);
 
     if whitelist.is_some() && blacklist.is_some() {
         anyhow::bail!("Cannot use both whitelist and blacklist at the same time.");
@@ -55,7 +54,6 @@ async fn main() -> Result<()> {
         priority,
         whitelist,
         blacklist,
-        transfer_lyric_files,
     };
     sync_songs(&sync_config, songs).await?;
 
