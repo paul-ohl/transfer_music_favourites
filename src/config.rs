@@ -1,5 +1,5 @@
-use crate::constants::CONFIG_FILE_NAME;
-use anyhow::Result;
+use crate::{api::ApiConfig, constants::CONFIG_FILE_NAME, sync::SyncConfig};
+use anyhow::{Context, Result};
 use config::{Config as ConfigBuilder, Environment, File};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -42,7 +42,54 @@ pub struct Config {
     pub blacklist: Option<Vec<String>>,
 }
 
-pub fn load_config(config_path: Option<PathBuf>) -> Result<Config> {
+pub fn get_configs(config_path: Option<PathBuf>) -> Result<(ApiConfig, SyncConfig)> {
+    let config = load_config_file(config_path).context("Could not load config file")?;
+
+    let url = config.url.context("Missing required parameter: url")?;
+    let user = config.user.context("Missing required parameter: user")?;
+    let password = config
+        .password
+        .context("Missing required parameter: password")?;
+    let navidrome_dir = config
+        .navidrome_dir
+        .context("Missing required parameter: navidrome_dir")?;
+    let local_dir = config
+        .local_dir
+        .context("Missing required parameter: local_dir")?;
+    let dest_dir = config
+        .dest_dir
+        .context("Missing required parameter: dest_dir")?;
+    let format = config.format;
+    let on_conflict = config.on_conflict.unwrap_or(ConflictStrategy::Overwrite);
+    let priority = config.priority.unwrap_or(ConversionPriority::Balance);
+    let whitelist = config.whitelist;
+    let blacklist = config.blacklist;
+
+    if whitelist.is_some() && blacklist.is_some() {
+        anyhow::bail!("Cannot use both whitelist and blacklist at the same time.");
+    }
+
+    let api_config = ApiConfig {
+        url,
+        user,
+        password,
+    };
+
+    let sync_config = SyncConfig {
+        navidrome_dir,
+        local_dir,
+        dest_dir,
+        format,
+        on_conflict,
+        priority,
+        whitelist,
+        blacklist,
+    };
+
+    Ok((api_config, sync_config))
+}
+
+fn load_config_file(config_path: Option<PathBuf>) -> Result<Config> {
     let mut builder = ConfigBuilder::builder();
 
     if let Some(config_dir) = dirs::config_dir() {
