@@ -1,0 +1,38 @@
+# Navidrome server URL (e.g., http://localhost:4533)
+url = "http://localhost:4533"
+
+# Navidrome username
+user = "admin"
+
+# Navidrome password
+# It is recommended to use the NAVIDROME_PASSWORD environment variable instead of setting this in the config file.
+# password = "your_password"
+
+# The root music directory as seen by Navidrome (e.g., /music)
+navidrome_dir = "/music"
+
+# The root music directory on your local machine (e.g., /mnt/storage/music)
+local_dir = "/storage/music"
+
+# The destination directory to copy liked songs to
+dest_dir = "/storage/liked"
+
+# Format to convert songs to (mp3, opus, ogg). Copied as-is if omitted.
+# format = "opus"
+
+# Strategy to use if a file with the same name but different extension exists.
+# Can be "overwrite" or "ignore".
+on_conflict = "overwrite"
+
+# Priority for conversion (quality, balance, compression)
+priority = "balance"
+
+# Whitelist of formats to convert. If not empty, only these formats will be converted.
+# whitelist = ["flac", "wav"]
+
+# Blacklist of formats to convert. If not empty, these formats will be skipped.
+# Cannot be used at the same time as whitelist.
+# blacklist = ["mp3"]
+
+# Whether to transfer lyric files (.lrc, .txt) alongside the music files.
+# transfer_lyric_files = false

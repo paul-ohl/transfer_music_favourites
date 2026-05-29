@@ -1,13 +1,7 @@
-use crate::models::{Song, SubsonicResponse};
+use crate::models::{ApiConfig, Song, SubsonicResponse};
 use anyhow::{Context, Result};
 use md5::{Digest, Md5};
 use rand::{RngExt, distr::Alphanumeric};
-
-pub struct ApiConfig {
-    pub url: String,
-    pub user: String,
-    pub password: String,
-}
 
 fn generate_salt() -> String {
     let rng = rand::rng();
