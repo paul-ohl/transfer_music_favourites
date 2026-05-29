@@ -1,38 +1,18 @@
-use crate::{api::ApiConfig, constants::CONFIG_FILE_NAME, sync::SyncConfig};
+use crate::{
+    constants::CONFIG_FILE_NAME,
+    models::{ApiConfig, ConflictStrategy, ConversionPriority, Format, SyncConfig},
+};
 use anyhow::{Context, Result};
 use config::{Config as ConfigBuilder, Environment, File};
 use serde::Deserialize;
 use std::path::PathBuf;
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Format {
-    Mp3,
-    Opus,
-    Ogg,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ConflictStrategy {
-    Overwrite,
-    Ignore,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ConversionPriority {
-    Quality,
-    Balance,
-    Compression,
-}
 
 #[derive(Deserialize, Debug, Default)]
 pub struct Config {
     pub url: Option<String>,
     pub user: Option<String>,
     pub password: Option<String>,
-    pub navidrome_dir: Option<String>,
+    pub navidrome_dir: Option<PathBuf>,
     pub local_dir: Option<PathBuf>,
     pub dest_dir: Option<PathBuf>,
     pub format: Option<Format>,

@@ -1,35 +1,15 @@
-use crate::config::{ConflictStrategy, ConversionPriority, Format};
-use crate::models::Song;
+use crate::models::{
+    ConflictStrategy, ConversionPriority, Format, Song, SongToConvert, SyncConfig,
+};
+use crate::sync::utils::{check_ffmpeg_installed, needs_conversion, setup_progress_bar};
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use tokio::process::Command;
 
-pub struct SyncConfig {
-    pub navidrome_dir: String,
-    pub local_dir: PathBuf,
-    pub dest_dir: PathBuf,
-    pub format: Option<Format>,
-    pub on_conflict: ConflictStrategy,
-    pub priority: ConversionPriority,
-    pub whitelist: Option<Vec<String>>,
-    pub blacklist: Option<Vec<String>>,
-}
-
-async fn check_ffmpeg_installed() -> Result<()> {
-    let output = Command::new("ffmpeg").arg("-version").output().await;
-    match output {
-        Ok(out) if out.status.success() => Ok(()),
-        _ => anyhow::bail!(
-            "ffmpeg is required for format conversion but was not found or failed to execute."
-        ),
-    }
-}
-
-pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
+pub async fn sync_music(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     if songs.is_empty() {
         println!("No liked songs found matching the criteria.");
         return Ok(());
@@ -39,32 +19,32 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
         check_ffmpeg_installed().await?;
     }
 
-    println!("Found {} liked songs. Starting copy...", songs.len());
+    println!("Found {} liked songs.", songs.len());
 
-    let progress_bar = ProgressBar::new(songs.len() as u64);
-    progress_bar.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({eta}) {msg}")?
-            .progress_chars("##-"),
-    );
+    let songs_to_transfer: Vec<SongToConvert> = songs
+        .into_iter()
+        .filter_map(|song| should_transfer_song(config, &song, &config.navidrome_dir))
+        .collect();
 
-    let progress_bar = Arc::new(progress_bar);
-    let navidrome_dir_path = PathBuf::from(&config.navidrome_dir);
+    let progress_bar = setup_progress_bar(songs_to_transfer.len() as u64)?;
+    progress_bar.println(format!(
+        "Start transfering {} songs",
+        songs_to_transfer.len()
+    ));
 
     let workers = thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
 
-    stream::iter(songs)
+    stream::iter(songs_to_transfer)
         .for_each_concurrent(workers, |song| {
             let config = &config;
             let progress_bar = Arc::clone(&progress_bar);
-            let navidrome_dir_path = navidrome_dir_path.clone();
 
             async move {
                 progress_bar.set_message(song.title.clone());
 
-                if let Err(e) = process_song(config, &song, &navidrome_dir_path).await {
+                if let Err(e) = process_song(config, &song).await {
                     progress_bar.println(format!(
                         "Warning: Could not process '{}': {}",
                         song.title, e
@@ -76,12 +56,21 @@ pub async fn sync_songs(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
         })
         .await;
 
-    progress_bar.finish_with_message("Done!");
+    progress_bar.finish_with_message("Done transfering songs!");
 
     Ok(())
 }
 
-async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Path) -> Result<()> {
+/// This function simply checks if the final path the music file will have already exists or not.
+///
+/// It first converts the navidrome file path to a dest dir file path, and replaces the extension if
+/// needed. Afterwards, it simply checks if the file with that path and extension already exists or
+/// not.
+fn should_transfer_song(
+    config: &SyncConfig,
+    song: &Song,
+    navidrome_dir_path: &Path,
+) -> Option<SongToConvert> {
     let song_path = Path::new(&song.path);
     let rel_path = song_path
         .strip_prefix(navidrome_dir_path)
@@ -94,51 +83,39 @@ async fn process_song(config: &SyncConfig, song: &Song, navidrome_dir_path: &Pat
     let needs_conversion = needs_conversion(config, &source_path);
 
     if needs_conversion && let Some(format) = &config.format {
-        let ext = match format {
-            Format::Mp3 => "mp3",
-            Format::Opus => "opus",
-            Format::Ogg => "ogg",
-        };
-        dest_path.set_extension(ext);
+        dest_path.set_extension(format.as_ref());
     }
 
     if dest_path.exists() {
-        return Ok(());
+        None
+    } else {
+        Some(SongToConvert {
+            title: song.title.clone(),
+            navidrome_path: song.path.clone(),
+            src_path: source_path,
+            dst_path: dest_path,
+        })
+    }
+}
+
+async fn process_song(config: &SyncConfig, song: &SongToConvert) -> Result<()> {
+    if !song.src_path.exists() {
+        anyhow::bail!("Source file not found: {:?}", song.src_path);
     }
 
-    if !source_path.exists() {
-        anyhow::bail!("Source file not found: {:?}", source_path);
-    }
-
-    if let Some(parent) = dest_path.parent() {
+    if let Some(parent) = song.dst_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
-        if handle_conflicts(config, &dest_path).await? {
+        if handle_conflicts(config, &song.dst_path).await? {
             return Ok(());
         }
     }
 
-    if needs_conversion {
-        convert_song(config, &source_path, &dest_path).await?;
+    if needs_conversion(config, &song.src_path) {
+        convert_song(config, &song.src_path, &song.dst_path).await?;
     } else {
-        tokio::fs::copy(&source_path, &dest_path).await?;
+        tokio::fs::copy(&song.src_path, &song.dst_path).await?;
     }
 
-    transfer_lyric_file(&source_path, &dest_path).await?;
-
-    Ok(())
-}
-
-async fn transfer_lyric_file(original_song_path: &Path, dest_song_path: &Path) -> Result<()> {
-    for ext in ["lrc", "txt"] {
-        let original_lyric_path = original_song_path.with_extension(ext);
-        if original_lyric_path.exists() {
-            let dest_lyric_path = dest_song_path.with_extension(ext);
-            if let Some(parent) = dest_lyric_path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
-            tokio::fs::copy(&original_lyric_path, &dest_lyric_path).await?;
-        }
-    }
     Ok(())
 }
 
@@ -164,41 +141,6 @@ async fn handle_conflicts(config: &SyncConfig, dest_path: &Path) -> Result<bool>
     }
 
     Ok(false)
-}
-
-fn needs_conversion(config: &SyncConfig, source_path: &Path) -> bool {
-    let target_format_str = match &config.format {
-        Some(Format::Mp3) => "mp3",
-        Some(Format::Opus) => "opus",
-        Some(Format::Ogg) => "ogg",
-        None => return false,
-    };
-
-    let source_ext = match source_path.extension().and_then(|s| s.to_str()) {
-        Some(ext) => ext,
-        None => return true, // No extension, assume it needs conversion if a target is set
-    };
-
-    if source_ext.eq_ignore_ascii_case(target_format_str) {
-        return false;
-    }
-
-    if let Some(whitelist) = &config.whitelist {
-        if !whitelist
-            .iter()
-            .any(|ext| ext.eq_ignore_ascii_case(source_ext))
-        {
-            return false;
-        }
-    } else if let Some(blacklist) = &config.blacklist
-        && blacklist
-            .iter()
-            .any(|ext| ext.eq_ignore_ascii_case(source_ext))
-    {
-        return false;
-    }
-
-    true
 }
 
 async fn convert_song(config: &SyncConfig, source_path: &Path, dest_path: &Path) -> Result<()> {
@@ -260,7 +202,7 @@ mod tests {
     #[test]
     fn test_needs_conversion_mp3() {
         let config = SyncConfig {
-            navidrome_dir: "/music".to_string(),
+            navidrome_dir: PathBuf::from("/music"),
             local_dir: PathBuf::from("/local"),
             dest_dir: PathBuf::from("/dest"),
             format: Some(Format::Mp3),
@@ -284,7 +226,7 @@ mod tests {
     #[test]
     fn test_needs_conversion_opus() {
         let config = SyncConfig {
-            navidrome_dir: "/music".to_string(),
+            navidrome_dir: PathBuf::from("/music"),
             local_dir: PathBuf::from("/local"),
             dest_dir: PathBuf::from("/dest"),
             format: Some(Format::Opus),
@@ -308,7 +250,7 @@ mod tests {
     #[test]
     fn test_needs_conversion_none() {
         let config = SyncConfig {
-            navidrome_dir: "/music".to_string(),
+            navidrome_dir: PathBuf::from("/music"),
             local_dir: PathBuf::from("/local"),
             dest_dir: PathBuf::from("/dest"),
             format: None,
@@ -329,7 +271,7 @@ mod tests {
     #[test]
     fn test_needs_conversion_ogg() {
         let config = SyncConfig {
-            navidrome_dir: "/music".to_string(),
+            navidrome_dir: PathBuf::from("/music"),
             local_dir: PathBuf::from("/local"),
             dest_dir: PathBuf::from("/dest"),
             format: Some(Format::Ogg),

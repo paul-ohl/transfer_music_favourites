@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use transfer_music_favourites::{
-    api::fetch_starred_songs, cli::Args, config::get_configs, sync::sync_songs,
+    api::fetch_starred_songs,
+    cli::Args,
+    config::get_configs,
+    sync::{sync_lyrics, sync_music},
 };
 
 #[tokio::main]
@@ -14,7 +17,8 @@ async fn main() -> Result<()> {
 
     let songs = fetch_starred_songs(&api_config).await?;
 
-    sync_songs(&sync_config, songs).await?;
+    sync_music(&sync_config, songs.clone()).await?;
+    sync_lyrics(&sync_config, songs).await?;
 
     Ok(())
 }
