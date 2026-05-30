@@ -1,3 +1,4 @@
+mod conversion;
 mod sync_lyrics;
 mod sync_music;
 mod utils;

@@ -1,13 +1,11 @@
-use crate::models::{
-    ConflictStrategy, ConversionPriority, Format, Song, SongToConvert, SyncConfig,
-};
+use crate::models::{ConflictStrategy, Song, SongToConvert, SyncConfig};
+use crate::sync::conversion::convert_song;
 use crate::sync::utils::{check_ffmpeg_installed, needs_conversion, setup_progress_bar};
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
-use tokio::process::Command;
 
 pub async fn sync_music(config: &SyncConfig, songs: Vec<Song>) -> Result<()> {
     if songs.is_empty() {
@@ -143,59 +141,10 @@ async fn handle_conflicts(config: &SyncConfig, dest_path: &Path) -> Result<bool>
     Ok(false)
 }
 
-async fn convert_song(config: &SyncConfig, source_path: &Path, dest_path: &Path) -> Result<()> {
-    let file_name = dest_path.file_name().unwrap_or_default().to_string_lossy();
-    let tmp_dest = dest_path.with_file_name(format!(".tmp.{}", file_name));
-
-    let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-i").arg(source_path);
-    cmd.arg("-vn");
-
-    match config.format.as_ref().unwrap() {
-        Format::Mp3 => {
-            cmd.arg("-c:a").arg("libmp3lame");
-            let q = match config.priority {
-                ConversionPriority::Quality => "0",
-                ConversionPriority::Balance => "2",
-                ConversionPriority::Compression => "5",
-            };
-            cmd.arg("-q:a").arg(q);
-        }
-        Format::Opus => {
-            cmd.arg("-c:a").arg("libopus");
-            let b = match config.priority {
-                ConversionPriority::Quality => "192k",
-                ConversionPriority::Balance => "128k",
-                ConversionPriority::Compression => "64k",
-            };
-            cmd.arg("-b:a").arg(b);
-        }
-        Format::Ogg => {
-            cmd.arg("-c:a").arg("libvorbis");
-            let q = match config.priority {
-                ConversionPriority::Quality => "8",
-                ConversionPriority::Balance => "5",
-                ConversionPriority::Compression => "2",
-            };
-            cmd.arg("-q:a").arg(q);
-        }
-    }
-
-    cmd.arg("-y").arg(&tmp_dest);
-
-    let output = cmd.output().await?;
-
-    if output.status.success() {
-        tokio::fs::rename(&tmp_dest, dest_path).await?;
-        Ok(())
-    } else {
-        let _ = tokio::fs::remove_file(&tmp_dest).await;
-        anyhow::bail!("FFmpeg error: {}", String::from_utf8_lossy(&output.stderr));
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::models::{ConversionPriority, Format};
+
     use super::*;
     use std::path::PathBuf;
 
